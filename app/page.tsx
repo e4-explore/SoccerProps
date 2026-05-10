@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { getFixtures, getStandings, type Fixture } from "./lib/api-football";
 import MatchCard from "./_components/MatchCard";
 import StandingsTable from "./_components/StandingsTable";
@@ -86,15 +87,30 @@ const TOP_LEAGUES = new Set([
 // ─── Today's matches (streamed) ───────────────────────────────────────────────
 
 async function TodaysMatches() {
-  const today = new Date().toISOString().split("T")[0];
-  const all = await getFixtures({ date: today, timezone: "America/New_York" });
+  await connection();
+  const now = new Date();
+  const todayStr = now.toISOString().split("T")[0];
+  const dateDisplay = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "America/New_York",
+  });
+
+  const all = await getFixtures({ date: todayStr, timezone: "America/New_York" });
   const fixtures = all.filter((f) => TOP_LEAGUES.has(f.league.id));
 
   if (fixtures.length === 0) {
     return (
-      <div className="flex items-center justify-center h-40 rounded-xl bg-zinc-900 text-zinc-500 text-sm">
-        No top-league matches scheduled for today.
-      </div>
+      <>
+        <div className="flex items-baseline gap-3 mb-6">
+          <h1 className="text-lg font-bold text-white">Today&rsquo;s Matches</h1>
+          <span className="text-sm text-zinc-500">{dateDisplay}</span>
+        </div>
+        <div className="flex items-center justify-center h-40 rounded-xl bg-zinc-900 text-zinc-500 text-sm">
+          No top-league matches scheduled for today.
+        </div>
+      </>
     );
   }
 
@@ -107,7 +123,12 @@ async function TodaysMatches() {
   }
 
   return (
-    <div className="space-y-7">
+    <>
+      <div className="flex items-baseline gap-3 mb-6">
+        <h1 className="text-lg font-bold text-white">Today&rsquo;s Matches</h1>
+        <span className="text-sm text-zinc-500">{dateDisplay}</span>
+      </div>
+      <div className="space-y-7">
       {[...byLeague.values()].map((group) => {
         const { league } = group[0];
         return (
@@ -143,7 +164,8 @@ async function TodaysMatches() {
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -169,13 +191,6 @@ export default function Page() {
 
   if (!hasApiKey) return <NoApiKey />;
 
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    timeZone: "America/New_York",
-  });
-
   return (
     <div className="flex flex-col flex-1 bg-zinc-950">
       {/* Header */}
@@ -200,12 +215,8 @@ export default function Page() {
       {/* Content */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-10">
-          {/* Fixtures */}
+          {/* Fixtures — heading + date rendered inside after data loads */}
           <div>
-            <div className="flex items-baseline gap-3 mb-6">
-              <h1 className="text-lg font-bold text-white">Today&rsquo;s Matches</h1>
-              <span className="text-sm text-zinc-500">{today}</span>
-            </div>
             <Suspense fallback={<MatchesSkeleton />}>
               <TodaysMatches />
             </Suspense>
