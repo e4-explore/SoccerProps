@@ -9,7 +9,8 @@ import {
   summarizePlayer,
   type PlayerLogs,
 } from "../../../../lib/player-trends";
-import { LEAGUES_BY_ID, currentSeason } from "../../../../lib/leagues";
+import { LEAGUES, LEAGUES_BY_ID, currentSeason } from "../../../../lib/leagues";
+import { BreadcrumbDropdown } from "../../../../_components/BreadcrumbDropdown";
 import {
   mockLeagueTeams,
   mockTeamPlayerLogs,
@@ -130,24 +131,39 @@ async function PlayerPageContent({
   const summary = summarizePlayer(playerLogs.games);
   const hitRates = computeHitRates(playerLogs.games);
   const trendSeries = computeTrendSeries(playerLogs.games);
-  const teamHref = `/players?league=${league}&team=${teamId}`;
   const basePath = `/player/${league}/${teamId}/${playerId}`;
+
+  const leagueOptions = LEAGUES.map((l) => ({
+    href: `/players?league=${l.id}`,
+    label: l.shortName,
+    active: l.id === league,
+  }));
+  const teamDropdownOptions = [...teamsRes.data]
+    .sort((a, b) => a.team.name.localeCompare(b.team.name))
+    .map((t) => ({
+      href: `/players?league=${league}&team=${t.team.id}`,
+      label: t.team.name,
+      logo: t.team.logo,
+      active: t.team.id === teamId,
+    }));
 
   return (
     <div className="space-y-8">
       {mocked && <MockBanner />}
 
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-        <Link href="/players" prefetch={false} className="hover:text-zinc-300">
-          {leagueMeta?.shortName ?? "League"}
-        </Link>
+      <div className="flex items-center gap-1.5 text-xs">
+        <BreadcrumbDropdown
+          label={leagueMeta?.shortName ?? "League"}
+          options={leagueOptions}
+        />
         <span className="text-zinc-700">/</span>
-        <Link href={teamHref} prefetch={false} className="hover:text-zinc-300">
-          {teamMeta?.team.name ?? `Team ${teamId}`}
-        </Link>
+        <BreadcrumbDropdown
+          label={teamMeta?.team.name ?? `Team ${teamId}`}
+          options={teamDropdownOptions}
+        />
         <span className="text-zinc-700">/</span>
-        <span className="text-zinc-300">{playerLogs.player.name}</span>
+        <span className="text-zinc-300 text-xs">{playerLogs.player.name}</span>
       </div>
 
       {/* Player header */}
@@ -172,7 +188,7 @@ async function PlayerPageContent({
           <div className="flex items-center gap-2 mt-1.5 text-sm text-zinc-400">
             {teamMeta && (
               <Link
-                href={teamHref}
+                href={`/players?league=${league}&team=${teamId}`}
                 prefetch={false}
                 className="flex items-center gap-1.5 hover:text-emerald-300 transition-colors"
               >

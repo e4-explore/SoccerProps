@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import LeagueChips from "../_components/LeagueChips";
 import TeamGrid from "../_components/TeamGrid";
-import TeamSwitcher from "../_components/TeamSwitcher";
 import PlayerRoster from "../_components/PlayerRoster";
 import MockBanner from "../_components/MockBanner";
-import { LEAGUES_BY_ID, currentSeason } from "../lib/leagues";
+import { BreadcrumbDropdown } from "../_components/BreadcrumbDropdown";
+import { LEAGUES, LEAGUES_BY_ID, currentSeason } from "../lib/leagues";
 import { getTeamPlayerLogs } from "../lib/player-trends";
 import { getLeagueTeams } from "../lib/api-football";
 import { mockLeagueTeams, mockTeamPlayerLogs } from "../lib/mock-data";
@@ -115,11 +116,6 @@ async function TeamRosterAndPlayer({
 
   const mocked = logsRes.mocked || teamsRes.mocked;
   const teamMeta = teamsRes.data.find((t) => t.team.id === team);
-  const teamOptions = teamsRes.data.map((t) => ({
-    id: t.team.id,
-    name: t.team.name,
-    logo: t.team.logo,
-  }));
   const { fixtures, logs } = logsRes.data;
 
   if (fixtures.length === 0) {
@@ -131,32 +127,49 @@ async function TeamRosterAndPlayer({
   }
 
   const leagueMeta = LEAGUES_BY_ID.get(league);
+  const leagueOptions = LEAGUES.map((l) => ({
+    href: `/players?league=${l.id}`,
+    label: l.shortName,
+    active: l.id === league,
+  }));
+  const teamDropdownOptions = [...teamsRes.data]
+    .sort((a, b) => a.team.name.localeCompare(b.team.name))
+    .map((t) => ({
+      href: `/players?league=${league}&team=${t.team.id}`,
+      label: t.team.name,
+      logo: t.team.logo,
+      active: t.team.id === team,
+    }));
 
   return (
     <div className="space-y-8">
       {mocked && <MockBanner />}
 
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-        <Link href="/players" prefetch={false} className="hover:text-zinc-300">
-          Search
-        </Link>
+      <div className="flex items-center gap-1.5 text-xs">
+        <BreadcrumbDropdown
+          label={leagueMeta?.shortName ?? `League ${league}`}
+          options={leagueOptions}
+        />
         <span className="text-zinc-700">/</span>
-        <Link href={`/players?league=${league}`} prefetch={false} className="hover:text-zinc-300">
-          {leagueMeta?.shortName ?? leagueMeta?.name ?? `League ${league}`}
-        </Link>
-        <span className="text-zinc-700">/</span>
-        <span className="text-zinc-300">{teamMeta?.team.name ?? `Team ${team}`}</span>
+        <BreadcrumbDropdown
+          label={teamMeta?.team.name ?? `Team ${team}`}
+          options={teamDropdownOptions}
+          isLast
+        />
       </div>
 
-      {teamOptions.length > 0 ? (
-        <TeamSwitcher
-          league={league}
-          teams={teamOptions}
-          activeTeamId={team}
-          subtitle={`Last ${fixtures.length} matches · ${logs.size} players with stats`}
-        />
-      ) : (
+      {/* Team header */}
+      <div className="flex items-center gap-3">
+        {teamMeta?.team.logo && (
+          <Image
+            src={teamMeta.team.logo}
+            alt={teamMeta.team.name}
+            width={36}
+            height={36}
+            className="object-contain shrink-0"
+          />
+        )}
         <div>
           <h1 className="text-xl font-bold text-white">
             {teamMeta?.team.name ?? `Team ${team}`}
@@ -165,7 +178,7 @@ async function TeamRosterAndPlayer({
             Last {fixtures.length} matches · {logs.size} players with stats
           </p>
         </div>
-      )}
+      </div>
 
       <div>
         <SectionHeading>Roster · totals over last {fixtures.length}</SectionHeading>
