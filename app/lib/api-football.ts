@@ -4,6 +4,26 @@ function apiHeaders(): HeadersInit {
   return { "x-apisports-key": process.env.API_FOOTBALL_KEY! };
 }
 
+/**
+ * Fetch + unwrap an api-sports response. Throws on HTTP errors AND on plan/rate
+ * errors (which return 200 OK with `errors: {...}`). Throwing is critical: when
+ * called inside a `"use cache"` scope, a thrown error is not cached, so the next
+ * request retries. Returning [] on error would cache the empty result.
+ */
+async function apiFetch<T>(url: string): Promise<T[]> {
+  const res = await fetch(url, { headers: apiHeaders() });
+  if (!res.ok) throw new Error(`api-football HTTP ${res.status}: ${url}`);
+  const data = await res.json();
+  const errs = data?.errors;
+  const hasErrors = Array.isArray(errs)
+    ? errs.length > 0
+    : errs && typeof errs === "object" && Object.keys(errs).length > 0;
+  if (hasErrors) {
+    throw new Error(`api-football error: ${JSON.stringify(errs)}`);
+  }
+  return data?.response ?? [];
+}
+
 export interface Team {
   id: number;
   name: string;
@@ -109,4 +129,137 @@ export async function getStandings(
   } catch {
     return [];
   }
+}
+
+// ─── Player props / trends endpoints ──────────────────────────────────────────
+
+export interface LeagueTeamRow {
+  team: Team & { country: string; founded: number | null; national: boolean };
+  venue: { id: number; name: string; city: string; capacity: number | null };
+}
+
+export async function getLeagueTeams(
+  league: number,
+  season: number
+): Promise<LeagueTeamRow[]> {
+  "use cache";
+  const { cacheLife } = await import("next/cache");
+  cacheLife("max"); // teams in a league don't change mid-season
+
+  return apiFetch<LeagueTeamRow>(`${BASE}/teams?league=${league}&season=${season}`);
+}
+
+/**
+ * Returns ALL fixtures for a team in a season. The free API tier doesn't
+ * support the `last=N` parameter, so callers slice client-side.
+ */
+export async function getTeamSeasonFixtures(
+  team: number,
+  season: number
+): Promise<Fixture[]> {
+  "use cache";
+  const { cacheLife } = await import("next/cache");
+  cacheLife("hours");
+
+  return apiFetch<Fixture>(`${BASE}/fixtures?team=${team}&season=${season}`);
+}
+
+export interface PlayerLite {
+  id: number;
+  name: string;
+  photo: string;
+}
+
+export interface PlayerStatLine {
+  games: {
+    minutes: number | null;
+    number: number | null;
+    position: string | null;
+    rating: string | null;
+    captain: boolean;
+    substitute: boolean;
+  };
+  offsides: number | null;
+  shots: { total: number | null; on: number | null };
+  goals: {
+    total: number | null;
+    conceded: number | null;
+    assists: number | null;
+    saves: number | null;
+  };
+  passes: {
+    total: number | null;
+    key: number | null;
+    accuracy: string | number | null;
+  };
+  tackles: {
+    total: number | null;
+    blocks: number | null;
+    interceptions: number | null;
+  };
+  duels: { total: number | null; won: number | null };
+  dribbles: {
+    attempts: number | null;
+    success: number | null;
+    past: number | null;
+  };
+  fouls: { drawn: number | null; committed: number | null };
+  cards: { yellow: number; red: number };
+  penalty: {
+    won: number | null;
+    committed: number | null;
+    scored: number;
+    missed: number;
+    saved: number | null;
+  };
+}
+
+export interface FixturePlayerEntry {
+  player: PlayerLite;
+  statistics: PlayerStatLine[];
+}
+
+export interface FixturePlayersTeamGroup {
+  team: Team;
+  players: FixturePlayerEntry[];
+}
+
+/**
+ * Per-player stats for a single fixture. Past fixtures never change, so we cache
+ * forever. Only called for finished fixtures.
+ */
+export async function getFixturePlayerStats(
+  fixtureId: number
+): Promise<FixturePlayersTeamGroup[]> {
+  "use cache";
+  const { cacheLife, cacheTag } = await import("next/cache");
+  cacheLife("max");
+  cacheTag(`fixture-players-${fixtureId}`);
+
+  return apiFetch<FixturePlayersTeamGroup>(
+    `${BASE}/fixtures/players?fixture=${fixtureId}`
+  );
+}
+
+export interface SquadPlayer {
+  id: number;
+  name: string;
+  age: number | null;
+  number: number | null;
+  position: string;
+  photo: string;
+}
+
+export interface TeamSquad {
+  team: Team;
+  players: SquadPlayer[];
+}
+
+export async function getTeamSquad(team: number): Promise<TeamSquad | null> {
+  "use cache";
+  const { cacheLife } = await import("next/cache");
+  cacheLife("days");
+
+  const rows = await apiFetch<TeamSquad>(`${BASE}/players/squads?team=${team}`);
+  return rows[0] ?? null;
 }

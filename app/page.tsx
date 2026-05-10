@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { connection } from "next/server";
 import { getFixtures, getStandings, type Fixture } from "./lib/api-football";
 import MatchCard from "./_components/MatchCard";
@@ -206,8 +207,13 @@ export default function Page() {
             <span className="text-white font-medium border-b border-emerald-500 pb-0.5">
               Matches
             </span>
-            <span className="text-zinc-500 cursor-not-allowed">Standings</span>
-            <span className="text-zinc-500 cursor-not-allowed">Props</span>
+            <Link
+              href="/players"
+              prefetch={false}
+              className="text-zinc-400 hover:text-zinc-200"
+            >
+              Players
+            </Link>
           </nav>
         </div>
       </header>
