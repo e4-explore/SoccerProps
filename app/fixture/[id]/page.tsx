@@ -273,7 +273,6 @@ export default function FixturePage({
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center gap-2">
-              <span className="text-lg">⚽</span>
               <span className="font-bold text-white tracking-tight">
                 SoccerProps
               </span>
