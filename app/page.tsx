@@ -98,8 +98,29 @@ async function TodaysMatches() {
     timeZone: "America/New_York",
   });
 
-  const all = await getFixtures({ date: todayStr, timezone: "America/New_York" });
-  const fixtures = all.filter((f) => TOP_LEAGUES.has(f.league.id));
+  let fixtures: Fixture[] = [];
+  let error: string | null = null;
+  try {
+    const all = await getFixtures({ date: todayStr, timezone: "America/New_York" });
+    fixtures = all.filter((f) => TOP_LEAGUES.has(f.league.id));
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  }
+
+  if (error) {
+    return (
+      <>
+        <div className="flex items-baseline gap-3 mb-6">
+          <h1 className="text-lg font-bold text-white">Today&rsquo;s Matches</h1>
+          <span className="text-sm text-zinc-500">{dateDisplay}</span>
+        </div>
+        <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-4 text-sm text-red-300">
+          <p className="font-medium mb-1">API request failed</p>
+          <p className="text-xs text-red-300/70 font-mono break-words">{error}</p>
+        </div>
+      </>
+    );
+  }
 
   if (fixtures.length === 0) {
     return (
@@ -173,16 +194,28 @@ async function TodaysMatches() {
 // ─── Premier League standings (cached, streamed) ──────────────────────────────
 
 async function PremierLeagueStandings() {
-  const standings = await getStandings(39, 2024);
-  const table = standings[0] ?? [];
+  let table: Awaited<ReturnType<typeof getStandings>>[number] = [];
+  let error: string | null = null;
+  try {
+    const standings = await getStandings(39, 2024);
+    table = standings[0] ?? [];
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e);
+  }
 
-  if (table.length === 0) {
+  if (error) {
     return (
-      <p className="text-zinc-600 text-sm">Standings unavailable.</p>
+      <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-3 text-xs text-red-300/80 font-mono break-words">
+        {error}
+      </div>
     );
   }
 
-  return <StandingsTable rows={table} />;
+  if (table.length === 0) {
+    return <p className="text-zinc-600 text-sm">Standings unavailable.</p>;
+  }
+
+  return <StandingsTable rows={table} league={39} />;
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────

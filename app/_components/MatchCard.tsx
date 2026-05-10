@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { Fixture } from "../lib/api-football";
 
 const LIVE = new Set(["1H", "2H", "ET", "BT", "P", "LIVE", "INT"]);
@@ -40,7 +41,9 @@ export default function MatchCard({ fixture }: { fixture: Fixture }) {
   });
 
   return (
-    <div
+    <Link
+      href={`/fixture/${fixture.fixture.id}`}
+      prefetch={false}
       className={`flex items-center gap-3 px-3 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 transition-colors${isLive ? " ring-1 ring-emerald-500/30" : ""}`}
     >
       {/* Home */}
@@ -86,6 +89,6 @@ export default function MatchCard({ fixture }: { fixture: Fixture }) {
           {teams.away.name}
         </span>
       </div>
-    </div>
+    </Link>
   );
 }

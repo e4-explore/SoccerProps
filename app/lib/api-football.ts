@@ -97,17 +97,32 @@ export async function getFixtures(params: {
     if (v !== undefined) url.searchParams.set(k, String(v));
   }
 
-  try {
-    const res = await fetch(url.toString(), {
-      headers: apiHeaders(),
-      cache: "no-store",
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.response ?? [];
-  } catch {
-    return [];
+  // Not cached (cache: "no-store") — today's fixtures change throughout the
+  // day. Throws on API errors so callers can show a useful message.
+  const res = await fetch(url.toString(), {
+    headers: apiHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`api-football HTTP ${res.status}: ${url}`);
+  const data = await res.json();
+  const errs = data?.errors;
+  const hasErrors = Array.isArray(errs)
+    ? errs.length > 0
+    : errs && typeof errs === "object" && Object.keys(errs).length > 0;
+  if (hasErrors) {
+    throw new Error(`api-football error: ${JSON.stringify(errs)}`);
   }
+  return data?.response ?? [];
+}
+
+export async function getFixtureById(id: number): Promise<Fixture | null> {
+  "use cache";
+  const { cacheLife, cacheTag } = await import("next/cache");
+  cacheLife("hours");
+  cacheTag(`fixture-${id}`);
+
+  const rows = await apiFetch<Fixture>(`${BASE}/fixtures?id=${id}`);
+  return rows[0] ?? null;
 }
 
 export async function getStandings(
@@ -118,17 +133,13 @@ export async function getStandings(
   const { cacheLife } = await import("next/cache");
   cacheLife("hours");
 
-  try {
-    const res = await fetch(
-      `${BASE}/standings?league=${league}&season=${season}`,
-      { headers: apiHeaders() }
-    );
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.response?.[0]?.league?.standings ?? [];
-  } catch {
-    return [];
-  }
+  // Use the throwing helper so cache isn't poisoned with empty results when the
+  // API errors (rate limit, plan gating, etc.) — see apiFetch above.
+  const rows = await apiFetch<{ league: { standings: StandingRow[][] } }>(
+    `${BASE}/standings?league=${league}&season=${season}`
+  );
+  const standings = rows[0]?.league?.standings;
+  return Array.isArray(standings) ? standings : [];
 }
 
 // ─── Player props / trends endpoints ──────────────────────────────────────────

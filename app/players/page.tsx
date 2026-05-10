@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import LeagueChips from "../_components/LeagueChips";
 import TeamGrid from "../_components/TeamGrid";
+import TeamSwitcher from "../_components/TeamSwitcher";
 import PlayerRoster from "../_components/PlayerRoster";
 import PlayerGameLog from "../_components/PlayerGameLog";
 import { LEAGUES_BY_ID, currentSeason } from "../lib/leagues";
@@ -105,6 +106,11 @@ async function TeamRosterAndPlayer({
   if (logsRes.error) return <ApiError message={logsRes.error} />;
 
   const teamMeta = teamsRes.data.find((t) => t.team.id === team);
+  const teamOptions = teamsRes.data.map((t) => ({
+    id: t.team.id,
+    name: t.team.name,
+    logo: t.team.logo,
+  }));
   const { fixtures, logs } = logsRes.data;
 
   if (fixtures.length === 0) {
@@ -119,15 +125,14 @@ async function TeamRosterAndPlayer({
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        {teamMeta && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={teamMeta.team.logo}
-            alt={teamMeta.team.name}
-            className="size-8 object-contain"
-          />
-        )}
+      {teamOptions.length > 0 ? (
+        <TeamSwitcher
+          league={league}
+          teams={teamOptions}
+          activeTeamId={team}
+          subtitle={`Last ${fixtures.length} matches · ${logs.size} players with stats`}
+        />
+      ) : (
         <div>
           <h1 className="text-xl font-bold text-white">
             {teamMeta?.team.name ?? `Team ${team}`}
@@ -136,7 +141,7 @@ async function TeamRosterAndPlayer({
             Last {fixtures.length} matches · {logs.size} players with stats
           </p>
         </div>
-      </div>
+      )}
 
       <div>
         <SectionHeading>Roster · totals over last {fixtures.length}</SectionHeading>
@@ -200,16 +205,7 @@ async function PageContent({
         </p>
       </div>
 
-      <div className="space-y-3">
-        <SectionHeading>Team</SectionHeading>
-        <TeamGrid
-          league={leagueId}
-          season={season}
-          activeTeamId={teamId}
-        />
-      </div>
-
-      {teamId && (
+      {teamId ? (
         <TeamRosterAndPlayer
           league={leagueId}
           team={teamId}
@@ -217,6 +213,15 @@ async function PageContent({
           last={last}
           playerId={playerId}
         />
+      ) : (
+        <div className="space-y-3">
+          <SectionHeading>Team</SectionHeading>
+          <TeamGrid
+            league={leagueId}
+            season={season}
+            activeTeamId={teamId}
+          />
+        </div>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { StandingRow } from "../lib/api-football";
 
 const ZONE_COLOR: Record<string, string> = {
@@ -16,7 +17,13 @@ function zoneColor(description: string | null): string | null {
   return null;
 }
 
-export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
+export default function StandingsTable({
+  rows,
+  league,
+}: {
+  rows: StandingRow[];
+  league: number;
+}) {
   return (
     <div className="rounded-xl bg-zinc-900 overflow-hidden">
       <table className="w-full text-sm">
@@ -52,7 +59,11 @@ export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
                   </div>
                 </td>
                 <td className="py-2 px-2">
-                  <div className="flex items-center gap-2">
+                  <Link
+                    href={`/players?league=${league}&team=${row.team.id}`}
+                    prefetch={false}
+                    className="flex items-center gap-2 hover:text-emerald-300 transition-colors"
+                  >
                     <Image
                       src={row.team.logo}
                       alt={row.team.name}
@@ -63,7 +74,7 @@ export default function StandingsTable({ rows }: { rows: StandingRow[] }) {
                     <span className="text-white text-xs font-medium truncate max-w-[100px]">
                       {row.team.name}
                     </span>
-                  </div>
+                  </Link>
                 </td>
                 <td className="py-2 px-2 text-center text-zinc-400 text-xs tabular-nums">
                   {row.all.played}
