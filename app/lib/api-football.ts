@@ -139,17 +139,26 @@ export async function getStandings(
   league: number,
   season: number
 ): Promise<StandingRow[][]> {
-  "use cache";
-  const { cacheLife } = await import("next/cache");
-  cacheLife("hours");
-
-  // Use the throwing helper so cache isn't poisoned with empty results when the
-  // API errors (rate limit, plan gating, etc.) — see apiFetch above.
-  const rows = await apiFetch<{ league: { standings: StandingRow[][] } }>(
-    `${BASE}/standings?league=${league}&season=${season}`
-  );
-  const standings = rows[0]?.league?.standings;
-  return Array.isArray(standings) ? standings : [];
+  // No "use cache" — that would call the API at build time to pre-populate
+  // the cache, burning rate-limited quota on every deploy. Use HTTP-level
+  // caching instead so the fetch is only made at runtime (first request).
+  try {
+    const res = await fetch(
+      `${BASE}/standings?league=${league}&season=${season}`,
+      { headers: apiHeaders(), next: { revalidate: 3600 } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    const errs = data?.errors;
+    const hasErrors = Array.isArray(errs)
+      ? errs.length > 0
+      : errs && typeof errs === "object" && Object.keys(errs).length > 0;
+    if (hasErrors) return [];
+    const standings = data?.response?.[0]?.league?.standings;
+    return Array.isArray(standings) ? standings : [];
+  } catch {
+    return [];
+  }
 }
 
 // ─── Player props / trends endpoints ──────────────────────────────────────────
