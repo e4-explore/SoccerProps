@@ -100,7 +100,11 @@ async function PlayerPageContent({
 
   const mocked = logsRes.mocked || teamsRes.mocked;
   const teamMeta = teamsRes.data.find((t) => t.team.id === teamId);
-  const playerLogs: PlayerLogs | undefined = logsRes.data.logs.get(playerId);
+  // In mock mode, player IDs from fixture rosters (p.id + fixtureId) won't match
+  // the base IDs used in mockTeamPlayerLogs. Fall back to the first available player.
+  const playerLogs: PlayerLogs | undefined =
+    logsRes.data.logs.get(playerId) ??
+    (mocked ? logsRes.data.logs.values().next().value : undefined);
 
   if (!playerLogs) {
     return (
