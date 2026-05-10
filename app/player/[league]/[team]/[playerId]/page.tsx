@@ -146,6 +146,14 @@ async function PlayerPageContent({
       logo: t.team.logo,
       active: t.team.id === teamId,
     }));
+  const playerDropdownOptions = [...logsRes.data.logs.values()]
+    .sort((a, b) => a.player.name.localeCompare(b.player.name))
+    .map((p) => ({
+      href: `/player/${league}/${teamId}/${p.player.id}`,
+      label: p.player.name,
+      logo: p.player.photo || undefined,
+      active: p.player.id === playerId,
+    }));
 
   return (
     <div className="space-y-8">
@@ -163,7 +171,11 @@ async function PlayerPageContent({
           options={teamDropdownOptions}
         />
         <span className="text-zinc-700">/</span>
-        <span className="text-zinc-300 text-xs">{playerLogs.player.name}</span>
+        <BreadcrumbDropdown
+          label={playerLogs.player.name}
+          options={playerDropdownOptions}
+          isLast
+        />
       </div>
 
       {/* Player header */}
