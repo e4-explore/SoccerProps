@@ -234,14 +234,14 @@ export default function Page() {
           </div>
           <nav className="flex items-center gap-6 text-sm">
             <span className="text-white font-medium border-b border-emerald-500 pb-0.5">
-              Matches
+              Home
             </span>
             <Link
               href="/players"
               prefetch={false}
               className="text-zinc-400 hover:text-zinc-200"
             >
-              Players
+              Search
             </Link>
           </nav>
         </div>

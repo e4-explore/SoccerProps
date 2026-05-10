@@ -288,14 +288,14 @@ export default function PlayerPage({
               prefetch={false}
               className="text-zinc-400 hover:text-zinc-200"
             >
-              Matches
+              Home
             </Link>
             <Link
               href="/players"
               prefetch={false}
               className="text-white font-medium border-b border-emerald-500 pb-0.5"
             >
-              Players
+              Search
             </Link>
           </nav>
         </div>

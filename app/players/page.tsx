@@ -130,9 +130,25 @@ async function TeamRosterAndPlayer({
     );
   }
 
+  const leagueMeta = LEAGUES_BY_ID.get(league);
+
   return (
     <div className="space-y-8">
       {mocked && <MockBanner />}
+
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+        <Link href="/players" prefetch={false} className="hover:text-zinc-300">
+          Search
+        </Link>
+        <span className="text-zinc-700">/</span>
+        <Link href={`/players?league=${league}`} prefetch={false} className="hover:text-zinc-300">
+          {leagueMeta?.shortName ?? leagueMeta?.name ?? `League ${league}`}
+        </Link>
+        <span className="text-zinc-700">/</span>
+        <span className="text-zinc-300">{teamMeta?.team.name ?? `Team ${team}`}</span>
+      </div>
+
       {teamOptions.length > 0 ? (
         <TeamSwitcher
           league={league}
@@ -237,10 +253,10 @@ export default function PlayersPage({
               prefetch={false}
               className="text-zinc-400 hover:text-zinc-200"
             >
-              Matches
+              Home
             </Link>
             <span className="text-white font-medium border-b border-emerald-500 pb-0.5">
-              Players
+              Search
             </span>
           </nav>
         </div>

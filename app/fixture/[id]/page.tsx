@@ -285,14 +285,14 @@ export default function FixturePage({
               prefetch={false}
               className="text-white font-medium border-b border-emerald-500 pb-0.5"
             >
-              Matches
+              Home
             </Link>
             <Link
               href="/players"
               prefetch={false}
               className="text-zinc-400 hover:text-zinc-200"
             >
-              Players
+              Search
             </Link>
           </nav>
         </div>
