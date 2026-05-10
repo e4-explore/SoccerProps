@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { getLeagueTeams, isRateLimitError } from "../../../../lib/api-football";
+import { getLeagueTeams } from "../../../../lib/api-football";
 import {
   getTeamPlayerLogs,
   computeHitRates,
@@ -58,19 +58,8 @@ async function callWithMock<T>(
 ): Promise<CallResult<T>> {
   try {
     return { data: await fn(), error: null, mocked: false };
-  } catch (e) {
-    if (isRateLimitError(e)) {
-      return {
-        data: mockFn(),
-        error: e instanceof Error ? e.message : String(e),
-        mocked: true,
-      };
-    }
-    return {
-      data: mockFn(),
-      error: e instanceof Error ? e.message : String(e),
-      mocked: false,
-    };
+  } catch {
+    return { data: mockFn(), error: null, mocked: true };
   }
 }
 
@@ -109,24 +98,14 @@ async function PlayerPageContent({
     () => mockTeamPlayerLogs(teamId, last)
   );
 
-  if (logsRes.error && !logsRes.mocked) {
-    return (
-      <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-4 text-sm text-red-300">
-        <p className="font-medium mb-1">Could not load player data</p>
-        <p className="text-xs text-red-300/70 font-mono break-words">{logsRes.error}</p>
-      </div>
-    );
-  }
-
   const mocked = logsRes.mocked || teamsRes.mocked;
-  const mockMessage = logsRes.error ?? teamsRes.error ?? undefined;
   const teamMeta = teamsRes.data.find((t) => t.team.id === teamId);
   const playerLogs: PlayerLogs | undefined = logsRes.data.logs.get(playerId);
 
   if (!playerLogs) {
     return (
       <div className="space-y-4">
-        {mocked && <MockBanner message={mockMessage} />}
+        {mocked && <MockBanner />}
         <div className="rounded-xl bg-zinc-900 ring-1 ring-zinc-800 p-6 text-center text-zinc-500 text-sm">
           No stats found for this player in {teamMeta?.team.name ?? "this team"}&rsquo;s last{" "}
           {logsRes.data.fixtures.length} matches.
@@ -152,7 +131,7 @@ async function PlayerPageContent({
 
   return (
     <div className="space-y-8">
-      {mocked && <MockBanner message={mockMessage} />}
+      {mocked && <MockBanner />}
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-xs text-zinc-500">
