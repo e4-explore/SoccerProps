@@ -192,20 +192,22 @@ async function PageContent({
 
   return (
     <div className="space-y-8">
-      <div className="space-y-3">
-        <SectionHeading>League</SectionHeading>
-        <LeagueChips activeId={leagueId} />
-        <p className="text-xs text-zinc-600">
-          {meta?.name ?? "League"} · {season}-
-          {(season + 1).toString().slice(2)} season
-          {season === 2024 && (
-            <span className="text-zinc-700">
-              {" "}
-              (free API tier max)
-            </span>
-          )}
-        </p>
-      </div>
+      {!teamId && (
+        <div className="space-y-3">
+          <SectionHeading>League</SectionHeading>
+          <LeagueChips activeId={leagueId} />
+          <p className="text-xs text-zinc-600">
+            {meta?.name ?? "League"} · {season}-
+            {(season + 1).toString().slice(2)} season
+            {season === 2024 && (
+              <span className="text-zinc-700">
+                {" "}
+                (free API tier max)
+              </span>
+            )}
+          </p>
+        </div>
+      )}
 
       {teamId ? (
         <TeamRosterAndPlayer
