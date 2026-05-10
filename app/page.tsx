@@ -4,7 +4,6 @@ import { connection } from "next/server";
 import {
   getFixtures,
   getStandings,
-  isRateLimitError,
   type Fixture,
 } from "./lib/api-football";
 import MatchCard from "./_components/MatchCard";
@@ -106,34 +105,13 @@ async function TodaysMatches() {
   });
 
   let fixtures: Fixture[] = [];
-  let error: string | null = null;
   let mocked = false;
   try {
     const all = await getFixtures({ date: todayStr, timezone: "America/New_York" });
     fixtures = all.filter((f) => TOP_LEAGUES.has(f.league.id));
-  } catch (e) {
-    if (isRateLimitError(e)) {
-      mocked = true;
-      error = e instanceof Error ? e.message : String(e);
-      fixtures = MOCK_TODAYS_FIXTURES;
-    } else {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  if (error && !mocked) {
-    return (
-      <>
-        <div className="flex items-baseline gap-3 mb-6">
-          <h1 className="text-lg font-bold text-white">Today&rsquo;s Matches</h1>
-          <span className="text-sm text-zinc-500">{dateDisplay}</span>
-        </div>
-        <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-4 text-sm text-red-300">
-          <p className="font-medium mb-1">API request failed</p>
-          <p className="text-xs text-red-300/70 font-mono break-words">{error}</p>
-        </div>
-      </>
-    );
+  } catch {
+    mocked = true;
+    fixtures = MOCK_TODAYS_FIXTURES;
   }
 
   if (fixtures.length === 0) {
@@ -164,9 +142,9 @@ async function TodaysMatches() {
         <h1 className="text-lg font-bold text-white">Today&rsquo;s Matches</h1>
         <span className="text-sm text-zinc-500">{dateDisplay}</span>
       </div>
-      {mocked && error && (
+      {mocked && (
         <div className="mb-5">
-          <MockBanner message={error} />
+          <MockBanner />
         </div>
       )}
       <div className="space-y-7">
@@ -214,31 +192,15 @@ async function TodaysMatches() {
 
 async function PremierLeagueStandings() {
   let table: Awaited<ReturnType<typeof getStandings>>[number] = [];
-  let error: string | null = null;
-  let mocked = false;
   try {
     const standings = await getStandings(39, 2024);
     table = standings[0] ?? [];
-  } catch (e) {
-    if (isRateLimitError(e)) {
-      mocked = true;
-      table = MOCK_EPL_STANDINGS;
-    } else {
-      error = e instanceof Error ? e.message : String(e);
-    }
+  } catch {
+    // getStandings catches internally and returns [], but handle just in case
   }
 
-  if (error) {
-    return (
-      <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-3 text-xs text-red-300/80 font-mono break-words">
-        {error}
-      </div>
-    );
-  }
-
-  if (table.length === 0) {
-    return <p className="text-zinc-600 text-sm">Standings unavailable.</p>;
-  }
+  const mocked = table.length === 0;
+  if (mocked) table = MOCK_EPL_STANDINGS;
 
   return (
     <div className="space-y-3">
