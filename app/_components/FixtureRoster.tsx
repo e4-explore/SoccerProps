@@ -77,7 +77,7 @@ export default function FixtureRoster({
                 >
                   <td className="py-2 pl-3 pr-2">
                     <Link
-                      href={`/players?league=${league}&team=${group.team.id}&player=${p.player.id}`}
+                      href={`/player/${league}/${group.team.id}/${p.player.id}`}
                       prefetch={false}
                       className="flex items-center gap-2"
                     >

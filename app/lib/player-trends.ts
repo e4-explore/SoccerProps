@@ -146,12 +146,27 @@ export function pickStat(s: PlayerStatLine, key: StatKey): number | null {
   }
 }
 
+export interface ThresholdSummary {
+  line: number;
+  hits: number;
+  total: number;
+  /** Number of consecutive most-recent games (most recent first) that hit. */
+  currentStreak: number;
+}
+
 export interface HitRateRow {
   stat: StatKey;
   label: string;
-  thresholds: { line: number; hits: number; total: number }[];
-  /** Mean across games where the player got minutes (for context). */
+  thresholds: ThresholdSummary[];
+  /** Mean per-game across games the player appeared in. */
   mean: number | null;
+  /** Mean per-90 minutes (rate-normalized for partial appearances). */
+  mean90: number | null;
+  /** Subset hit rates for home and away games. */
+  homeAway: {
+    home: { thresholds: ThresholdSummary[]; mean: number | null };
+    away: { thresholds: ThresholdSummary[]; mean: number | null };
+  };
 }
 
 /**
@@ -171,21 +186,160 @@ const HIT_RATE_LINES: Record<StatKey, number[]> = {
   rating: [],
 };
 
+interface NumericGame {
+  value: number;
+  minutes: number;
+  /** Game index — 0 = most recent. */
+  recencyIndex: number;
+}
+
+function gameValues(games: GameLogEntry[], stat: StatKey): NumericGame[] {
+  return games
+    .map((g, i) => {
+      const minutes = g.stats.games.minutes ?? 0;
+      if (minutes === 0) return null;
+      const v = pickStat(g.stats, stat);
+      if (v === null) return null;
+      return { value: v, minutes, recencyIndex: i };
+    })
+    .filter((x): x is NumericGame => x !== null);
+}
+
+function summarizeThresholds(
+  values: NumericGame[],
+  lines: number[]
+): ThresholdSummary[] {
+  // Recency-sorted (most recent first) for streak detection
+  const byRecency = [...values].sort((a, b) => a.recencyIndex - b.recencyIndex);
+  return lines.map((line) => {
+    const hits = values.filter((v) => v.value > line).length;
+    let streak = 0;
+    for (const g of byRecency) {
+      if (g.value > line) streak += 1;
+      else break;
+    }
+    return { line, hits, total: values.length, currentStreak: streak };
+  });
+}
+
+function meanOf(values: NumericGame[]): number | null {
+  if (!values.length) return null;
+  return values.reduce((a, b) => a + b.value, 0) / values.length;
+}
+
+function meanPer90(values: NumericGame[]): number | null {
+  const totalMin = values.reduce((s, v) => s + v.minutes, 0);
+  if (totalMin === 0) return null;
+  const totalVal = values.reduce((s, v) => s + v.value, 0);
+  return (totalVal / totalMin) * 90;
+}
+
 export function computeHitRates(games: GameLogEntry[]): HitRateRow[] {
-  const appeared = games.filter((g) => (g.stats.games.minutes ?? 0) > 0);
+  const homeGames = games.filter((g) => g.isHome);
+  const awayGames = games.filter((g) => !g.isHome);
+
   return (Object.keys(HIT_RATE_LINES) as StatKey[])
     .filter((k) => HIT_RATE_LINES[k].length > 0)
     .map((stat) => {
-      const values = appeared
-        .map((g) => pickStat(g.stats, stat))
-        .filter((v): v is number => v !== null);
-      const mean = values.length
-        ? values.reduce((a, b) => a + b, 0) / values.length
-        : null;
-      const thresholds = HIT_RATE_LINES[stat].map((line) => {
-        const hits = values.filter((v) => v > line).length;
-        return { line, hits, total: values.length };
-      });
-      return { stat, label: STAT_LABEL[stat], thresholds, mean };
+      const lines = HIT_RATE_LINES[stat];
+      const all = gameValues(games, stat);
+      const home = gameValues(homeGames, stat);
+      const away = gameValues(awayGames, stat);
+      return {
+        stat,
+        label: STAT_LABEL[stat],
+        thresholds: summarizeThresholds(all, lines),
+        mean: meanOf(all),
+        mean90: stat === "rating" ? null : meanPer90(all),
+        homeAway: {
+          home: {
+            thresholds: summarizeThresholds(home, lines),
+            mean: meanOf(home),
+          },
+          away: {
+            thresholds: summarizeThresholds(away, lines),
+            mean: meanOf(away),
+          },
+        },
+      };
     });
+}
+
+// ─── Player-level summary ────────────────────────────────────────────────────
+
+export interface PlayerSummary {
+  apps: number;
+  starts: number;
+  totalMinutes: number;
+  avgMinutes: number | null;
+  avgRating: number | null;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  redCards: number;
+  position: string | null;
+  /** Recent ratings (oldest → newest) for sparkline display. */
+  ratingTrend: (number | null)[];
+}
+
+export function summarizePlayer(games: GameLogEntry[]): PlayerSummary {
+  const appeared = games.filter((g) => (g.stats.games.minutes ?? 0) > 0);
+  const starts = appeared.filter((g) => !g.stats.games.substitute).length;
+  const totalMinutes = appeared.reduce(
+    (s, g) => s + (g.stats.games.minutes ?? 0),
+    0
+  );
+  const ratings = appeared
+    .map((g) => (g.stats.games.rating ? Number(g.stats.games.rating) : null))
+    .filter((v): v is number => v !== null);
+  const avgRating = ratings.length
+    ? ratings.reduce((a, b) => a + b, 0) / ratings.length
+    : null;
+
+  // Reverse the chronologically-sorted (most-recent first) games into
+  // chronological order for trend visualization (left = old, right = new).
+  const trend = [...games]
+    .reverse()
+    .map((g) =>
+      g.stats.games.rating ? Number(g.stats.games.rating) : null
+    );
+
+  return {
+    apps: appeared.length,
+    starts,
+    totalMinutes,
+    avgMinutes: appeared.length ? totalMinutes / appeared.length : null,
+    avgRating,
+    goals: appeared.reduce((s, g) => s + (g.stats.goals.total ?? 0), 0),
+    assists: appeared.reduce((s, g) => s + (g.stats.goals.assists ?? 0), 0),
+    yellowCards: appeared.reduce((s, g) => s + g.stats.cards.yellow, 0),
+    redCards: appeared.reduce((s, g) => s + g.stats.cards.red, 0),
+    position:
+      appeared.find((g) => g.stats.games.position)?.stats.games.position ??
+      null,
+    ratingTrend: trend,
+  };
+}
+
+// ─── Per-stat trend series for sparkline bars ────────────────────────────────
+
+export interface TrendSeries {
+  stat: StatKey;
+  label: string;
+  /** Chronological (oldest → newest); null for DNP games. */
+  values: (number | null)[];
+}
+
+const TREND_STATS: StatKey[] = ["shots", "sot", "goals", "tackles", "passKey"];
+
+export function computeTrendSeries(games: GameLogEntry[]): TrendSeries[] {
+  const chrono = [...games].reverse();
+  return TREND_STATS.map((stat) => ({
+    stat,
+    label: STAT_LABEL[stat],
+    values: chrono.map((g) => {
+      if ((g.stats.games.minutes ?? 0) === 0) return null;
+      return pickStat(g.stats, stat);
+    }),
+  }));
 }

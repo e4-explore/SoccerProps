@@ -4,7 +4,6 @@ import LeagueChips from "../_components/LeagueChips";
 import TeamGrid from "../_components/TeamGrid";
 import TeamSwitcher from "../_components/TeamSwitcher";
 import PlayerRoster from "../_components/PlayerRoster";
-import PlayerGameLog from "../_components/PlayerGameLog";
 import MockBanner from "../_components/MockBanner";
 import { LEAGUES_BY_ID, currentSeason } from "../lib/leagues";
 import { getTeamPlayerLogs } from "../lib/player-trends";
@@ -18,7 +17,6 @@ export const metadata = {
 interface SearchParams {
   league?: string;
   team?: string;
-  player?: string;
   n?: string;
 }
 
@@ -111,13 +109,11 @@ async function TeamRosterAndPlayer({
   team,
   season,
   last,
-  playerId,
 }: {
   league: number;
   team: number;
   season: number;
   last: number;
-  playerId?: number;
 }) {
   const teamsRes = await callWithMock(
     () => getLeagueTeams(league, season),
@@ -148,8 +144,6 @@ async function TeamRosterAndPlayer({
     );
   }
 
-  const playerLogs = playerId ? logs.get(playerId) : undefined;
-
   return (
     <div className="space-y-8">
       {mocked && <MockBanner message={mockMessage} />}
@@ -173,32 +167,11 @@ async function TeamRosterAndPlayer({
 
       <div>
         <SectionHeading>Roster · totals over last {fixtures.length}</SectionHeading>
-        <PlayerRoster
-          league={league}
-          team={team}
-          logs={logs}
-          activePlayerId={playerId}
-        />
+        <PlayerRoster league={league} team={team} logs={logs} />
         <p className="mt-2 text-xs text-zinc-600">
-          Click a player to see their game log and prop hit rates.
+          Click a player to open their full stats &amp; trends page.
         </p>
       </div>
-
-      {playerId && (
-        <div className="pt-4 border-t border-zinc-800">
-          {playerLogs ? (
-            <PlayerGameLog
-              player={playerLogs.player}
-              games={playerLogs.games}
-            />
-          ) : (
-            <div className="py-8 text-center text-zinc-500 text-sm">
-              No stats found for player {playerId} in this team&rsquo;s last{" "}
-              {fixtures.length} matches.
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -213,7 +186,6 @@ async function PageContent({
   const meta = LEAGUES_BY_ID.get(leagueId);
   const season = currentSeason(leagueId);
   const teamId = params.team ? Number(params.team) : undefined;
-  const playerId = params.player ? Number(params.player) : undefined;
   const last = Math.min(20, Math.max(3, Number(params.n) || 10));
 
   return (
@@ -239,7 +211,6 @@ async function PageContent({
           team={teamId}
           season={season}
           last={last}
-          playerId={playerId}
         />
       ) : (
         <div className="space-y-3">

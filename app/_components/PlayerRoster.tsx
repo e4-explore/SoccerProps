@@ -85,7 +85,7 @@ export default function PlayerRoster({
               >
                 <td className="py-2 pl-3 pr-2">
                   <Link
-                    href={`/players?league=${league}&team=${team}&player=${r.player.id}`}
+                    href={`/player/${league}/${team}/${r.player.id}`}
                     prefetch={false}
                     className="flex items-center gap-2"
                   >
