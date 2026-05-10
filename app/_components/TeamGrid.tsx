@@ -2,7 +2,6 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   getLeagueTeams,
-  isRateLimitError,
   type LeagueTeamRow,
 } from "../lib/api-football";
 import { mockLeagueTeams } from "../lib/mock-data";
@@ -21,21 +20,9 @@ export default async function TeamGrid({
   let mocked = false;
   try {
     teams = await getLeagueTeams(league, season);
-  } catch (e) {
-    if (isRateLimitError(e)) {
-      mocked = true;
-      teams = mockLeagueTeams(league);
-    } else {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-3 text-xs text-red-300/80 font-mono break-words">
-        {error}
-      </div>
-    );
+  } catch {
+    mocked = true;
+    teams = mockLeagueTeams(league);
   }
 
   if (teams.length === 0) {

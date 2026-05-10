@@ -4,7 +4,6 @@ import Image from "next/image";
 import {
   getFixtureById,
   getFixturePlayerStats,
-  isRateLimitError,
   type Fixture,
 } from "../../lib/api-football";
 import FixtureRoster from "../../_components/FixtureRoster";
@@ -152,14 +151,9 @@ async function FixtureContent({
   let mocked = false;
   try {
     fixture = await getFixtureById(id);
-  } catch (e) {
-    if (isRateLimitError(e)) {
-      mocked = true;
-      fixtureError = e instanceof Error ? e.message : String(e);
-      fixture = mockFixtureById(id);
-    } else {
-      fixtureError = e instanceof Error ? e.message : String(e);
-    }
+  } catch {
+    mocked = true;
+    fixture = mockFixtureById(id);
   }
 
   if (!fixture) {
@@ -187,14 +181,9 @@ async function FixtureContent({
     } else {
       try {
         groups = await getFixturePlayerStats(id);
-      } catch (e) {
-        if (isRateLimitError(e)) {
-          mocked = true;
-          rosterError = e instanceof Error ? e.message : String(e);
-          groups = mockFixturePlayerStats(id);
-        } else {
-          rosterError = e instanceof Error ? e.message : String(e);
-        }
+      } catch {
+        mocked = true;
+        groups = mockFixturePlayerStats(id);
       }
     }
   }

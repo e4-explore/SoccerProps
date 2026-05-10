@@ -126,13 +126,20 @@ export async function getFixtures(params: {
 }
 
 export async function getFixtureById(id: number): Promise<Fixture | null> {
-  "use cache";
-  const { cacheLife, cacheTag } = await import("next/cache");
-  cacheLife("hours");
-  cacheTag(`fixture-${id}`);
-
-  const rows = await apiFetch<Fixture>(`${BASE}/fixtures?id=${id}`);
-  return rows[0] ?? null;
+  // HTTP-level cache — not "use cache" to avoid build-time API calls and
+  // production error message sanitization breaking the mock fallback.
+  const res = await fetch(`${BASE}/fixtures?id=${id}`, {
+    headers: apiHeaders(),
+    next: { revalidate: 300 },
+  });
+  if (!res.ok) throw new Error(`api-football HTTP ${res.status}`);
+  const data = await res.json();
+  const errs = data?.errors;
+  const hasErrors = Array.isArray(errs)
+    ? errs.length > 0
+    : errs && typeof errs === "object" && Object.keys(errs).length > 0;
+  if (hasErrors) throw new Error(`api-football error: ${JSON.stringify(errs)}`);
+  return (data?.response ?? [])[0] ?? null;
 }
 
 export async function getStandings(
@@ -172,11 +179,20 @@ export async function getLeagueTeams(
   league: number,
   season: number
 ): Promise<LeagueTeamRow[]> {
-  "use cache";
-  const { cacheLife } = await import("next/cache");
-  cacheLife("max"); // teams in a league don't change mid-season
-
-  return apiFetch<LeagueTeamRow>(`${BASE}/teams?league=${league}&season=${season}`);
+  // HTTP-level cache (teams don't change mid-season, long revalidate is fine).
+  // Not "use cache" to keep error messages intact for mock-fallback detection.
+  const res = await fetch(`${BASE}/teams?league=${league}&season=${season}`, {
+    headers: apiHeaders(),
+    next: { revalidate: 86400 },
+  });
+  if (!res.ok) throw new Error(`api-football HTTP ${res.status}`);
+  const data = await res.json();
+  const errs = data?.errors;
+  const hasErrors = Array.isArray(errs)
+    ? errs.length > 0
+    : errs && typeof errs === "object" && Object.keys(errs).length > 0;
+  if (hasErrors) throw new Error(`api-football error: ${JSON.stringify(errs)}`);
+  return data?.response ?? [];
 }
 
 /**
