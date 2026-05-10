@@ -258,27 +258,26 @@ export default function Page() {
 
           {/* Standings sidebar */}
           <div>
-            <div className="flex items-center gap-2 mb-6">
-              <h2 className="text-lg font-bold text-white">Premier League</h2>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-lg font-bold text-white">Standings</h2>
+              <div className="flex flex-wrap gap-3 text-xs text-zinc-500">
+                <span className="flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-blue-500" />
+                  Champions League
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-orange-500" />
+                  Europa League
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-red-500" />
+                  Relegation
+                </span>
+              </div>
             </div>
             <Suspense fallback={<StandingsSkeleton />}>
               <PremierLeagueStandings />
             </Suspense>
-            {/* Legend */}
-            <div className="mt-3 flex flex-wrap gap-3 text-xs text-zinc-600">
-              <span className="flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-blue-500" />
-                Champions League
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-orange-500" />
-                Europa League
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="size-1.5 rounded-full bg-red-500" />
-                Relegation
-              </span>
-            </div>
           </div>
         </div>
       </main>
