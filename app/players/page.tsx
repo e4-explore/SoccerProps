@@ -5,9 +5,11 @@ import TeamGrid from "../_components/TeamGrid";
 import TeamSwitcher from "../_components/TeamSwitcher";
 import PlayerRoster from "../_components/PlayerRoster";
 import PlayerGameLog from "../_components/PlayerGameLog";
+import MockBanner from "../_components/MockBanner";
 import { LEAGUES_BY_ID, currentSeason } from "../lib/leagues";
 import { getTeamPlayerLogs } from "../lib/player-trends";
-import { getLeagueTeams } from "../lib/api-football";
+import { getLeagueTeams, isRateLimitError } from "../lib/api-football";
+import { mockLeagueTeams, mockTeamPlayerLogs } from "../lib/mock-data";
 
 export const metadata = {
   title: "Player Trends — SoccerProps",
@@ -76,11 +78,31 @@ function ApiError({ message }: { message: string }) {
   );
 }
 
-async function safeCall<T>(fn: () => Promise<T>, fallback: T): Promise<{ data: T; error: string | null }> {
+interface CallResult<T> {
+  data: T;
+  error: string | null;
+  mocked: boolean;
+}
+
+async function callWithMock<T>(
+  fn: () => Promise<T>,
+  mockFn: () => T
+): Promise<CallResult<T>> {
   try {
-    return { data: await fn(), error: null };
+    return { data: await fn(), error: null, mocked: false };
   } catch (e) {
-    return { data: fallback, error: e instanceof Error ? e.message : String(e) };
+    if (isRateLimitError(e)) {
+      return {
+        data: mockFn(),
+        error: e instanceof Error ? e.message : String(e),
+        mocked: true,
+      };
+    }
+    return {
+      data: mockFn(), // never used (we surface the error)
+      error: e instanceof Error ? e.message : String(e),
+      mocked: false,
+    };
   }
 }
 
@@ -97,14 +119,19 @@ async function TeamRosterAndPlayer({
   last: number;
   playerId?: number;
 }) {
-  const teamsRes = await safeCall(() => getLeagueTeams(league, season), []);
-  const logsRes = await safeCall(
+  const teamsRes = await callWithMock(
+    () => getLeagueTeams(league, season),
+    () => mockLeagueTeams(league)
+  );
+  const logsRes = await callWithMock(
     () => getTeamPlayerLogs(team, season, last),
-    { fixtures: [], logs: new Map() }
+    () => mockTeamPlayerLogs(team, last)
   );
 
-  if (logsRes.error) return <ApiError message={logsRes.error} />;
+  if (logsRes.error && !logsRes.mocked) return <ApiError message={logsRes.error} />;
 
+  const mocked = logsRes.mocked || teamsRes.mocked;
+  const mockMessage = logsRes.error ?? teamsRes.error ?? undefined;
   const teamMeta = teamsRes.data.find((t) => t.team.id === team);
   const teamOptions = teamsRes.data.map((t) => ({
     id: t.team.id,
@@ -125,6 +152,7 @@ async function TeamRosterAndPlayer({
 
   return (
     <div className="space-y-8">
+      {mocked && <MockBanner message={mockMessage} />}
       {teamOptions.length > 0 ? (
         <TeamSwitcher
           league={league}

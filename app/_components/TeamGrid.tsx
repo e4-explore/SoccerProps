@@ -1,6 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
-import { getLeagueTeams, type LeagueTeamRow } from "../lib/api-football";
+import {
+  getLeagueTeams,
+  isRateLimitError,
+  type LeagueTeamRow,
+} from "../lib/api-football";
+import { mockLeagueTeams } from "../lib/mock-data";
 
 export default async function TeamGrid({
   league,
@@ -13,10 +18,16 @@ export default async function TeamGrid({
 }) {
   let teams: LeagueTeamRow[] = [];
   let error: string | null = null;
+  let mocked = false;
   try {
     teams = await getLeagueTeams(league, season);
   } catch (e) {
-    error = e instanceof Error ? e.message : String(e);
+    if (isRateLimitError(e)) {
+      mocked = true;
+      teams = mockLeagueTeams(league);
+    } else {
+      error = e instanceof Error ? e.message : String(e);
+    }
   }
 
   if (error) {
@@ -40,7 +51,11 @@ export default async function TeamGrid({
   );
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+    <div className="space-y-2">
+      {mocked && (
+        <p className="text-xs text-amber-400/80">Mock teams — API quota reached</p>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
       {sorted.map(({ team }) => {
         const active = team.id === activeTeamId;
         return (
@@ -71,6 +86,7 @@ export default async function TeamGrid({
           </Link>
         );
       })}
+      </div>
     </div>
   );
 }

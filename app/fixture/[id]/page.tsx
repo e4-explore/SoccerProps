@@ -4,9 +4,12 @@ import Image from "next/image";
 import {
   getFixtureById,
   getFixturePlayerStats,
+  isRateLimitError,
   type Fixture,
 } from "../../lib/api-football";
 import FixtureRoster from "../../_components/FixtureRoster";
+import MockBanner from "../../_components/MockBanner";
+import { mockFixtureById, mockFixturePlayerStats } from "../../lib/mock-data";
 
 const LIVE = new Set(["1H", "2H", "ET", "BT", "P", "LIVE", "INT"]);
 const FINISHED = new Set(["FT", "AET", "PEN"]);
@@ -146,13 +149,20 @@ async function FixtureContent({
 
   let fixture: Fixture | null = null;
   let fixtureError: string | null = null;
+  let mocked = false;
   try {
     fixture = await getFixtureById(id);
   } catch (e) {
-    fixtureError = e instanceof Error ? e.message : String(e);
+    if (isRateLimitError(e)) {
+      mocked = true;
+      fixtureError = e instanceof Error ? e.message : String(e);
+      fixture = mockFixtureById(id);
+    } else {
+      fixtureError = e instanceof Error ? e.message : String(e);
+    }
   }
 
-  if (fixtureError || !fixture) {
+  if (!fixture) {
     return (
       <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-4 text-sm text-red-300">
         <p className="font-medium mb-1">Fixture unavailable</p>
@@ -170,10 +180,22 @@ async function FixtureContent({
   let groups: Awaited<ReturnType<typeof getFixturePlayerStats>> = [];
   let rosterError: string | null = null;
   if (finished || live) {
-    try {
-      groups = await getFixturePlayerStats(id);
-    } catch (e) {
-      rosterError = e instanceof Error ? e.message : String(e);
+    if (mocked) {
+      // We already fell back to mocks for the fixture metadata; use mock player
+      // stats too so the rosters render as expected.
+      groups = mockFixturePlayerStats(id);
+    } else {
+      try {
+        groups = await getFixturePlayerStats(id);
+      } catch (e) {
+        if (isRateLimitError(e)) {
+          mocked = true;
+          rosterError = e instanceof Error ? e.message : String(e);
+          groups = mockFixturePlayerStats(id);
+        } else {
+          rosterError = e instanceof Error ? e.message : String(e);
+        }
+      }
     }
   }
 
@@ -182,6 +204,7 @@ async function FixtureContent({
 
   return (
     <div className="space-y-6">
+      {mocked && <MockBanner message={fixtureError ?? rosterError ?? undefined} />}
       <MatchHeader fixture={fixture} />
 
       {!finished && !live && (
@@ -210,14 +233,14 @@ async function FixtureContent({
         </div>
       )}
 
-      {(finished || live) && rosterError && (
+      {(finished || live) && rosterError && !mocked && (
         <div className="rounded-xl bg-red-500/5 ring-1 ring-red-500/20 p-4 text-sm text-red-300">
           <p className="font-medium mb-1">Could not load player stats</p>
           <p className="text-xs text-red-300/70 font-mono break-words">{rosterError}</p>
         </div>
       )}
 
-      {(finished || live) && !rosterError && groups.length > 0 && (
+      {(finished || live) && (!rosterError || mocked) && groups.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {home && (
             <FixtureRoster group={home} league={leagueId} />

@@ -5,6 +5,16 @@ function apiHeaders(): HeadersInit {
 }
 
 /**
+ * True when an error came from api-sports' daily-quota limit (vs other failures
+ * like a missing season or an HTTP problem). Pages use this to decide whether
+ * to fall back to mock data alongside the error message.
+ */
+export function isRateLimitError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /reached the request limit/i.test(msg) || /rateLimit/i.test(msg);
+}
+
+/**
  * Fetch + unwrap an api-sports response. Throws on HTTP errors AND on plan/rate
  * errors (which return 200 OK with `errors: {...}`). Throwing is critical: when
  * called inside a `"use cache"` scope, a thrown error is not cached, so the next
