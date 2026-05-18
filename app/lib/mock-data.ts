@@ -552,3 +552,174 @@ export function mockFixturePlayerStats(id: number): FixturePlayersTeamGroup[] {
     ),
   ];
 }
+
+// ─── H2H + team-season fallbacks for pre-match insights ──────────────────────
+
+interface MockTeamRef {
+  id: number;
+  name: string;
+  logo?: string;
+}
+
+// Deterministic pseudo-random so the same teams always produce the same mock
+// history (no flicker between requests).
+function seededInt(seed: number, mod: number): number {
+  const x = Math.sin(seed) * 10000;
+  return Math.floor((x - Math.floor(x)) * mod);
+}
+
+function logoFor(ref: MockTeamRef): string {
+  return ref.logo ?? TEAM_LOGO(ref.id);
+}
+
+function mockPastFixture(opts: {
+  id: number;
+  home: MockTeamRef;
+  away: MockTeamRef;
+  goalsHome: number;
+  goalsAway: number;
+  daysAgo: number;
+  leagueId?: number;
+  leagueName?: string;
+  round?: string;
+}): Fixture {
+  const date = new Date();
+  date.setDate(date.getDate() - opts.daysAgo);
+  date.setHours(15, 0, 0, 0);
+  const winner =
+    opts.goalsHome > opts.goalsAway
+      ? "home"
+      : opts.goalsHome < opts.goalsAway
+        ? "away"
+        : null;
+  return {
+    fixture: {
+      id: opts.id,
+      referee: null,
+      timezone: "UTC",
+      date: date.toISOString(),
+      timestamp: Math.floor(date.getTime() / 1000),
+      status: { short: "FT", long: "Match Finished", elapsed: 90 },
+    },
+    league: {
+      id: opts.leagueId ?? 39,
+      name: opts.leagueName ?? "Premier League",
+      country: "England",
+      logo: LEAGUE_LOGO(opts.leagueId ?? 39),
+      flag: COUNTRY_FLAG("GB"),
+      season: 2024,
+      round: opts.round ?? "Regular Season",
+    },
+    teams: {
+      home: {
+        id: opts.home.id,
+        name: opts.home.name,
+        logo: logoFor(opts.home),
+        winner: winner === "home" ? true : winner === "away" ? false : null,
+      },
+      away: {
+        id: opts.away.id,
+        name: opts.away.name,
+        logo: logoFor(opts.away),
+        winner: winner === "away" ? true : winner === "home" ? false : null,
+      },
+    },
+    goals: { home: opts.goalsHome, away: opts.goalsAway },
+    score: {
+      halftime: {
+        home: Math.floor(opts.goalsHome / 2),
+        away: Math.floor(opts.goalsAway / 2),
+      },
+      fulltime: { home: opts.goalsHome, away: opts.goalsAway },
+      extratime: { home: null, away: null },
+      penalty: { home: null, away: null },
+    },
+  };
+}
+
+export function mockHeadToHead(t1: MockTeamRef, t2: MockTeamRef): Fixture[] {
+  const seed = t1.id * 31 + t2.id;
+  // 8 prior meetings, alternating venue, with varied scorelines.
+  return Array.from({ length: 8 }, (_, i) => {
+    const homeIsT1 = i % 2 === 0;
+    const home = homeIsT1 ? t1 : t2;
+    const away = homeIsT1 ? t2 : t1;
+    const gh = seededInt(seed + i * 7, 4);
+    const ga = seededInt(seed + i * 11 + 3, 4);
+    return mockPastFixture({
+      id: 9100000 + seed + i,
+      home,
+      away,
+      goalsHome: gh,
+      goalsAway: ga,
+      daysAgo: 90 + i * 180,
+      round: `H2H archive ${i + 1}`,
+    });
+  });
+}
+
+function mockStandingRow(team: MockTeamRef, seed: number): StandingRow {
+  const played = 30 + seededInt(seed, 6);
+  const win = 8 + seededInt(seed + 1, 12);
+  const draw = 3 + seededInt(seed + 2, 6);
+  const lose = Math.max(0, played - win - draw);
+  const goalsFor = 25 + seededInt(seed + 3, 35);
+  const goalsAgainst = 20 + seededInt(seed + 4, 30);
+  const formChars = ["W", "D", "L"] as const;
+  const form = Array.from({ length: 5 }, (_, i) =>
+    formChars[seededInt(seed + 10 + i, 3)]
+  ).join("");
+  return {
+    rank: 1 + seededInt(seed + 5, 18),
+    team: { id: team.id, name: team.name, logo: logoFor(team) },
+    points: win * 3 + draw,
+    goalsDiff: goalsFor - goalsAgainst,
+    group: "Mock league",
+    form,
+    status: "same",
+    description: null,
+    all: {
+      played,
+      win,
+      draw,
+      lose,
+      goals: { for: goalsFor, against: goalsAgainst },
+    },
+  };
+}
+
+/**
+ * Synthetic standings rows for the two teams when the league table isn't
+ * available (e.g. mock mode for a non-EPL fixture). Lets the standings card
+ * still render in the preview UI without needing the real /standings call.
+ */
+export function mockStandingsForTeams(
+  home: MockTeamRef,
+  away: MockTeamRef
+): StandingRow[] {
+  return [
+    mockStandingRow(home, home.id * 7),
+    mockStandingRow(away, away.id * 13),
+  ];
+}
+
+export function mockTeamSeasonFixtures(team: MockTeamRef): Fixture[] {
+  // Use EPL teams as a pool of believable opponents, swapped to avoid the
+  // subject team itself. Names/logos for the subject team come from the caller.
+  const opponents = EPL_TEAMS.filter((t) => t.id !== team.id).slice(0, 10);
+  return opponents.map((opp, i) => {
+    const homeIsTeam = i % 2 === 0;
+    const home = homeIsTeam ? team : opp;
+    const away = homeIsTeam ? opp : team;
+    const gh = seededInt(team.id * 13 + i * 5, 4);
+    const ga = seededInt(team.id * 17 + i * 9 + 1, 4);
+    return mockPastFixture({
+      id: 9200000 + team.id * 100 + i,
+      home,
+      away,
+      goalsHome: gh,
+      goalsAway: ga,
+      daysAgo: 7 + i * 14,
+    });
+  });
+}

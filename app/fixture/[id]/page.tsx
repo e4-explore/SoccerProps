@@ -8,6 +8,7 @@ import {
 } from "../../lib/api-football";
 import FixtureRoster from "../../_components/FixtureRoster";
 import MockBanner from "../../_components/MockBanner";
+import PreMatchInsights from "../../_components/PreMatchInsights";
 import { mockFixtureById, mockFixturePlayerStats } from "../../lib/mock-data";
 
 const LIVE = new Set(["1H", "2H", "ET", "BT", "P", "LIVE", "INT"]);
@@ -197,29 +198,9 @@ async function FixtureContent({
       <MatchHeader fixture={fixture} />
 
       {!finished && !live && (
-        <div className="rounded-xl bg-zinc-900 ring-1 ring-zinc-800 p-6 space-y-3">
-          <h2 className="text-sm font-semibold text-white">Match hasn&rsquo;t started</h2>
-          <p className="text-sm text-zinc-400">
-            Per-player stats appear once the match kicks off. In the meantime,
-            dig into each side&rsquo;s recent form and rosters:
-          </p>
-          <div className="flex flex-wrap gap-3 pt-2">
-            <Link
-              href={`/players?league=${leagueId}&team=${fixture.teams.home.id}`}
-              prefetch={false}
-              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-white transition-colors"
-            >
-              {fixture.teams.home.name} →
-            </Link>
-            <Link
-              href={`/players?league=${leagueId}&team=${fixture.teams.away.id}`}
-              prefetch={false}
-              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-white transition-colors"
-            >
-              {fixture.teams.away.name} →
-            </Link>
-          </div>
-        </div>
+        <Suspense fallback={<PreMatchSkeleton />}>
+          <PreMatchInsights fixture={fixture} mocked={mocked} />
+        </Suspense>
       )}
 
       {(finished || live) && rosterError && !mocked && (
@@ -258,6 +239,19 @@ function FixtureSkeleton() {
           <div key={i} className="rounded-xl bg-zinc-900 h-96 animate-pulse" />
         ))}
       </div>
+    </div>
+  );
+}
+
+function PreMatchSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl bg-zinc-900 h-72 animate-pulse" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-xl bg-zinc-900 h-64 animate-pulse" />
+        <div className="rounded-xl bg-zinc-900 h-64 animate-pulse" />
+      </div>
+      <div className="rounded-xl bg-zinc-900 h-40 animate-pulse" />
     </div>
   );
 }

@@ -142,6 +142,31 @@ export async function getFixtureById(id: number): Promise<Fixture | null> {
   return (data?.response ?? [])[0] ?? null;
 }
 
+/**
+ * Last N head-to-head meetings between two teams. HTTP-cached so we don't burn
+ * quota on every fixture page view, but short enough that a finished match
+ * shows up in subsequent views. Throws on error so the page's mock fallback
+ * kicks in — matches the getFixtureById convention.
+ */
+export async function getHeadToHead(
+  team1: number,
+  team2: number,
+  last = 10
+): Promise<Fixture[]> {
+  const res = await fetch(
+    `${BASE}/fixtures/headtohead?h2h=${team1}-${team2}&last=${last}`,
+    { headers: apiHeaders(), next: { revalidate: 3600 } }
+  );
+  if (!res.ok) throw new Error(`api-football HTTP ${res.status}`);
+  const data = await res.json();
+  const errs = data?.errors;
+  const hasErrors = Array.isArray(errs)
+    ? errs.length > 0
+    : errs && typeof errs === "object" && Object.keys(errs).length > 0;
+  if (hasErrors) throw new Error(`api-football error: ${JSON.stringify(errs)}`);
+  return data?.response ?? [];
+}
+
 export async function getStandings(
   league: number,
   season: number
