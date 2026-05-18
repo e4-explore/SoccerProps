@@ -420,7 +420,7 @@ const MOCK_OPPONENTS: MockTeamMeta[] = [
 export function mockTeamPlayerLogs(
   teamId: number,
   last = 10
-): { fixtures: Fixture[]; logs: Map<number, PlayerLogs> } {
+): { fixtures: Fixture[]; upcoming: Fixture[]; logs: Map<number, PlayerLogs> } {
   const fixtures: Fixture[] = [];
   const r = rng(teamId);
 
@@ -450,12 +450,41 @@ export function mockTeamPlayerLogs(
     );
   }
 
+  // One scheduled upcoming fixture so H2H can default to "next opponent".
+  // Pick an opponent the team has already met so the H2H sample isn't empty.
+  const nextOpp = MOCK_OPPONENTS[0];
+  const upcoming: Fixture[] = [
+    mockFixture({
+      id: 9100000 + teamId * 100 + 999,
+      leagueId: 39,
+      leagueName: "Premier League",
+      country: "England",
+      flag: COUNTRY_FLAG("GB"),
+      round: `Regular Season - ${36 + 1}`,
+      home: { id: teamId, name: "Selected Team" },
+      away: nextOpp,
+      goalsHome: null,
+      goalsAway: null,
+      status: { short: "NS", long: "Not Started", elapsed: null },
+      hourOffset: 24 * 3,
+    }),
+  ];
+
   const logs = new Map<number, PlayerLogs>();
   for (const p of MOCK_PLAYERS) {
     const games: GameLogEntry[] = fixtures.map((f, i) => {
       const played = !(p.id === 990012 && i % 3 === 0) && !(p.id === 990013 && i % 4 === 0);
       const isHome = f.teams.home.id === teamId;
       const opp = isHome ? f.teams.away : f.teams.home;
+      const stats = mockPlayerStats(p.position, p.id + i, played);
+      // Synthetic xG/xA so the mock-mode preview shows the columns populated.
+      // Real data comes from Understat for mapped players in live mode.
+      const xg = played
+        ? Number((((stats.shots.total ?? 0) * 0.12 + (stats.shots.on ?? 0) * 0.05)).toFixed(2))
+        : null;
+      const xa = played
+        ? Number((((stats.passes.key ?? 0) * 0.08 + (stats.goals.assists ?? 0) * 0.3)).toFixed(2))
+        : null;
       return {
         fixtureId: f.fixture.id,
         date: f.fixture.date,
@@ -463,7 +492,9 @@ export function mockTeamPlayerLogs(
         isHome,
         goalsFor: isHome ? f.goals.home : f.goals.away,
         goalsAgainst: isHome ? f.goals.away : f.goals.home,
-        stats: mockPlayerStats(p.position, p.id + i, played),
+        stats,
+        xg,
+        xa,
       };
     });
     // Empty photo URL — components that render player photos already guard
@@ -474,7 +505,7 @@ export function mockTeamPlayerLogs(
     });
   }
 
-  return { fixtures, logs };
+  return { fixtures, upcoming, logs };
 }
 
 // ─── Fixture detail (single match + per-player stats) ────────────────────────

@@ -6,8 +6,15 @@ import {
   getTeamPlayerLogs,
   computeHitRates,
   computeTrendSeries,
+  computeHeadlineStats,
+  getOpponentsPlayed,
+  sliceGames,
   summarizePlayer,
+  WINDOW_LABEL,
+  VENUE_LABEL,
   type PlayerLogs,
+  type Window,
+  type Venue,
 } from "../../../../lib/player-trends";
 import { LEAGUES, LEAGUES_BY_ID, currentSeason } from "../../../../lib/leagues";
 import { BreadcrumbDropdown } from "../../../../_components/BreadcrumbDropdown";
@@ -16,13 +23,12 @@ import {
   mockTeamPlayerLogs,
 } from "../../../../lib/mock-data";
 import MockBanner from "../../../../_components/MockBanner";
-import PlayerKPI from "../../../../_components/PlayerKPI";
+import WindowToggle from "../../../../_components/WindowToggle";
+import PlayerSummaryPanel from "../../../../_components/PlayerSummaryPanel";
 import PlayerSplitsTable from "../../../../_components/PlayerSplitsTable";
 import PlayerStreaks from "../../../../_components/PlayerStreaks";
 import PlayerTrendBars from "../../../../_components/PlayerTrendBars";
-import PlayerGameLogTable, {
-  type GameLogFilter,
-} from "../../../../_components/PlayerGameLogTable";
+import PlayerGameLogTable from "../../../../_components/PlayerGameLogTable";
 
 interface RouteParams {
   league: string;
@@ -31,13 +37,35 @@ interface RouteParams {
 }
 
 interface SearchParams {
-  filter?: string;
-  n?: string;
+  window?: string;
+  venue?: string;
+  opponent?: string;
 }
 
 export const metadata = {
   title: "Player — SoccerProps",
 };
+
+// Fetch up to a full league season; first cold load is slow on the rate-limited
+// free tier (~3-4 min) but every window toggle after is in-memory free.
+const SEASON_FETCH = 38;
+
+function parseWindow(v: string | undefined): Window {
+  if (
+    v === "last5" ||
+    v === "last10" ||
+    v === "last20" ||
+    v === "season" ||
+    v === "vs"
+  )
+    return v;
+  return "last10";
+}
+
+function parseVenue(v: string | undefined): Venue {
+  if (v === "home" || v === "away" || v === "starts") return v;
+  return "all";
+}
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -75,11 +103,10 @@ async function PlayerPageContent({
   const league = Number(p.league);
   const teamId = Number(p.team);
   const playerId = Number(p.playerId);
-  const last = Math.min(20, Math.max(3, Number(sp.n) || 10));
-  const filter: GameLogFilter =
-    sp.filter === "home" || sp.filter === "away" || sp.filter === "starts"
-      ? sp.filter
-      : "all";
+  const window = parseWindow(sp.window);
+  const venue = parseVenue(sp.venue);
+  const opponentParam = sp.opponent ? Number(sp.opponent) : undefined;
+  const opponentFromParam = Number.isFinite(opponentParam) ? opponentParam : undefined;
 
   if (!Number.isFinite(league) || !Number.isFinite(teamId) || !Number.isFinite(playerId)) {
     return (
@@ -95,14 +122,12 @@ async function PlayerPageContent({
     () => mockLeagueTeams(league)
   );
   const logsRes = await callWithMock(
-    () => getTeamPlayerLogs(teamId, season, last),
-    () => mockTeamPlayerLogs(teamId, last)
+    () => getTeamPlayerLogs(teamId, season, SEASON_FETCH),
+    () => mockTeamPlayerLogs(teamId, SEASON_FETCH)
   );
 
   const mocked = logsRes.mocked || teamsRes.mocked;
   const teamMeta = teamsRes.data.find((t) => t.team.id === teamId);
-  // In mock mode, player IDs from fixture rosters (p.id + fixtureId) won't match
-  // the base IDs used in mockTeamPlayerLogs. Fall back to the first available player.
   const playerLogs: PlayerLogs | undefined =
     logsRes.data.logs.get(playerId) ??
     (mocked ? logsRes.data.logs.values().next().value : undefined);
@@ -128,10 +153,53 @@ async function PlayerPageContent({
     );
   }
 
-  const summary = summarizePlayer(playerLogs.games);
-  const hitRates = computeHitRates(playerLogs.games);
-  const trendSeries = computeTrendSeries(playerLogs.games);
+  // ── H2H opponent resolution ────────────────────────────────────────────────
+  // Opponents in the fetched window feed the picker. Default opponent when
+  // window=vs: the URL param wins, otherwise auto-default to the player's
+  // team's next scheduled opponent. Falls back to undefined if neither exists.
+  const opponentsPlayed = getOpponentsPlayed(playerLogs.games);
+  const nextOpponentId = logsRes.data.upcoming[0]
+    ? logsRes.data.upcoming[0].teams.home.id === teamId
+      ? logsRes.data.upcoming[0].teams.away.id
+      : logsRes.data.upcoming[0].teams.home.id
+    : undefined;
+  const resolvedOpponentId =
+    opponentFromParam ?? (window === "vs" ? nextOpponentId : undefined);
+  const currentOpponent =
+    resolvedOpponentId !== undefined
+      ? opponentsPlayed.find((o) => o.id === resolvedOpponentId)
+      : undefined;
+
+  // ── Slicing ────────────────────────────────────────────────────────────────
+  // Three slices feed different sections:
+  //  - focusSlice: window + venue (+ opponent if vs) → summary, streaks, trends, game log
+  //  - splitsSlice: window only → splits table (it shows its own H/A breakdown)
+  //  - baselineSlice: season + same venue → delta baseline for summary
+  const focusSlice = sliceGames(
+    playerLogs.games,
+    window,
+    venue,
+    resolvedOpponentId,
+  );
+  // For H2H mode the splits table still shows the H/A breakdown of all H2H games.
+  const splitsSlice = sliceGames(
+    playerLogs.games,
+    window,
+    "all",
+    resolvedOpponentId,
+  );
+  const baselineSlice = sliceGames(playerLogs.games, "season", venue);
+
+  const summary = summarizePlayer(focusSlice);
+  const headline = computeHeadlineStats(focusSlice, baselineSlice);
+  const focusHitRates = computeHitRates(focusSlice);
+  const splitsHitRates = computeHitRates(splitsSlice);
+  const trendSeries = computeTrendSeries(focusSlice);
   const basePath = `/player/${league}/${teamId}/${playerId}`;
+  const baselineLabel =
+    venue === "all"
+      ? "season"
+      : `season · ${VENUE_LABEL[venue].toLowerCase()}`;
 
   const leagueOptions = LEAGUES.map((l) => ({
     href: `/players?league=${l.id}`,
@@ -231,40 +299,66 @@ async function PlayerPageContent({
               </>
             )}
             <span className="text-zinc-700">·</span>
-            <span>Last {playerLogs.games.length} matches</span>
+            <span>
+              {playerLogs.games.length} season {playerLogs.games.length === 1 ? "match" : "matches"} fetched
+            </span>
           </div>
         </div>
       </div>
 
-      {/* KPI cards */}
-      <PlayerKPI summary={summary} />
+      {/* Window + venue toggle */}
+      <WindowToggle
+        basePath={basePath}
+        window={window}
+        venue={venue}
+        sampleSize={focusSlice.length}
+        opponentId={resolvedOpponentId}
+        opponents={opponentsPlayed}
+        currentOpponent={currentOpponent}
+      />
 
-      {/* Recent form / streaks */}
+      {/* Summary panel: headline stats with deltas + primary prop hit rates */}
+      <PlayerSummaryPanel
+        headline={headline}
+        hitRates={focusHitRates}
+        window={window}
+        venue={venue}
+        sampleSize={focusSlice.length}
+        baselineLabel={baselineLabel}
+        h2h={
+          window === "vs"
+            ? {
+                opponentName: currentOpponent?.name ?? null,
+                lastMeeting: currentOpponent?.lastMeeting ?? null,
+              }
+            : undefined
+        }
+      />
+
+      {/* Recent form / streaks (focus slice) */}
       <div>
-        <SectionHeading>Hot &amp; cold streaks</SectionHeading>
-        <PlayerStreaks rows={hitRates} />
+        <SectionHeading>Hot &amp; cold streaks · {WINDOW_LABEL[window]}</SectionHeading>
+        <PlayerStreaks rows={focusHitRates} />
       </div>
 
-      {/* Hit rates with splits */}
+      {/* Splits table — always venue-agnostic so it shows H/A breakdown */}
       <div>
-        <SectionHeading>Prop hit rates · splits &amp; per-90</SectionHeading>
-        <PlayerSplitsTable rows={hitRates} />
+        <SectionHeading>
+          Prop hit rates · home/away splits · {WINDOW_LABEL[window]}
+        </SectionHeading>
+        <PlayerSplitsTable rows={splitsHitRates} />
       </div>
 
-      {/* Trend bars */}
+      {/* Trend bars (focus slice) */}
       <div>
-        <SectionHeading>Trends · {playerLogs.games.length}-game series</SectionHeading>
+        <SectionHeading>Trends · {focusSlice.length}-game series</SectionHeading>
         <PlayerTrendBars series={trendSeries} />
       </div>
 
-      {/* Game log */}
+      {/* Game log (focus slice) */}
       <div>
-        <SectionHeading>Game log</SectionHeading>
-        <PlayerGameLogTable
-          games={playerLogs.games}
-          filter={filter}
-          basePath={basePath}
-        />
+        <SectionHeading>Game log · {WINDOW_LABEL[window]}{venue !== "all" ? ` · ${VENUE_LABEL[venue]}` : ""}</SectionHeading>
+        <PlayerGameLogTable games={focusSlice} />
       </div>
     </div>
   );

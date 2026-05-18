@@ -5,8 +5,11 @@ import {
   type PlayerLite,
   type PlayerStatLine,
 } from "./api-football";
+import { getPlayerMatches } from "./understat";
+import { understatIdFor } from "./understat-player-map";
 
 const FINISHED = new Set(["FT", "AET", "PEN"]);
+const SCHEDULED = new Set(["NS", "TBD", "PST"]);
 
 export interface GameLogEntry {
   fixtureId: number;
@@ -16,6 +19,10 @@ export interface GameLogEntry {
   goalsFor: number | null;
   goalsAgainst: number | null;
   stats: PlayerStatLine;
+  /** Expected goals for this appearance (Understat). null = no mapping or no match. */
+  xg: number | null;
+  /** Expected assists for this appearance (Understat). null = no mapping or no match. */
+  xa: number | null;
 }
 
 export interface PlayerLogs {
@@ -33,12 +40,19 @@ export async function getTeamPlayerLogs(
   teamId: number,
   season: number,
   last = 10
-): Promise<{ fixtures: Fixture[]; logs: Map<number, PlayerLogs> }> {
+): Promise<{
+  fixtures: Fixture[];
+  upcoming: Fixture[];
+  logs: Map<number, PlayerLogs>;
+}> {
   const all = await getTeamSeasonFixtures(teamId, season);
   const finished = all
     .filter((f) => FINISHED.has(f.fixture.status.short))
     .sort((a, b) => b.fixture.date.localeCompare(a.fixture.date))
     .slice(0, last);
+  const upcoming = all
+    .filter((f) => SCHEDULED.has(f.fixture.status.short))
+    .sort((a, b) => a.fixture.date.localeCompare(b.fixture.date));
 
   // Free tier rate-limits at 10 req/min, so chunk the per-fixture fetches.
   // Cache hits are free, so warm-cache reloads stay snappy. We also tolerate
@@ -82,6 +96,8 @@ export async function getTeamPlayerLogs(
         goalsFor: isHome ? fixture.goals.home : fixture.goals.away,
         goalsAgainst: isHome ? fixture.goals.away : fixture.goals.home,
         stats: stat,
+        xg: null,
+        xa: null,
       });
       logs.set(entry.player.id, existing);
     }
@@ -91,7 +107,30 @@ export async function getTeamPlayerLogs(
     v.games.sort((a, b) => b.date.localeCompare(a.date));
   }
 
-  return { fixtures: finished, logs };
+  // Merge per-match xG/xA from Understat for any player that has a mapping.
+  // Failures here are non-fatal: the page still renders without xG/xA.
+  await Promise.allSettled(
+    [...logs.entries()].map(async ([apiFootballId, playerLogs]) => {
+      const understatId = understatIdFor(apiFootballId);
+      if (understatId === undefined) return;
+      try {
+        const matches = await getPlayerMatches(understatId);
+        const byDate = new Map(matches.map((m) => [m.date, m]));
+        for (const g of playerLogs.games) {
+          const key = g.date.slice(0, 10);
+          const u = byDate.get(key);
+          if (u) {
+            g.xg = u.xg;
+            g.xa = u.xa;
+          }
+        }
+      } catch {
+        // Understat fetch failed — leave xg/xa as null. UI shows "–".
+      }
+    }),
+  );
+
+  return { fixtures: finished, upcoming, logs };
 }
 
 // ─── Stat selectors & hit-rate math ──────────────────────────────────────────
@@ -101,7 +140,9 @@ export type StatKey =
   | "shots"
   | "sot"
   | "goals"
+  | "xg"
   | "assists"
+  | "xa"
   | "tackles"
   | "fouls"
   | "yellow"
@@ -113,7 +154,9 @@ export const STAT_LABEL: Record<StatKey, string> = {
   shots: "Sh",
   sot: "SoT",
   goals: "G",
+  xg: "xG",
   assists: "A",
+  xa: "xA",
   tackles: "Tk",
   fouls: "Fls",
   yellow: "YC",
@@ -121,6 +164,11 @@ export const STAT_LABEL: Record<StatKey, string> = {
   rating: "Rtg",
 };
 
+/**
+ * Stat selector for keys that live on the API-Football PlayerStatLine. Returns
+ * null for keys that don't live there (xg/xa). Use `pickGameStat` if you need
+ * the full set including xG/xA.
+ */
 export function pickStat(s: PlayerStatLine, key: StatKey): number | null {
   switch (key) {
     case "minutes":
@@ -143,7 +191,20 @@ export function pickStat(s: PlayerStatLine, key: StatKey): number | null {
       return s.passes.key;
     case "rating":
       return s.games.rating ? Number(s.games.rating) : null;
+    case "xg":
+    case "xa":
+      return null;
   }
+}
+
+/**
+ * Stat selector that knows about xG/xA (which live on GameLogEntry, not on
+ * PlayerStatLine). Use this in any aggregation that should include xG/xA.
+ */
+export function pickGameStat(g: GameLogEntry, key: StatKey): number | null {
+  if (key === "xg") return g.xg;
+  if (key === "xa") return g.xa;
+  return pickStat(g.stats, key);
 }
 
 export interface ThresholdSummary {
@@ -182,6 +243,8 @@ const HIT_RATE_LINES: Record<StatKey, number[]> = {
   fouls: [0.5, 1.5, 2.5],
   yellow: [0.5],
   passKey: [0.5, 1.5, 2.5],
+  xg: [0.15, 0.3, 0.5],
+  xa: [0.15, 0.3, 0.5],
   minutes: [],
   rating: [],
 };
@@ -198,7 +261,7 @@ function gameValues(games: GameLogEntry[], stat: StatKey): NumericGame[] {
     .map((g, i) => {
       const minutes = g.stats.games.minutes ?? 0;
       if (minutes === 0) return null;
-      const v = pickStat(g.stats, stat);
+      const v = pickGameStat(g, stat);
       if (v === null) return null;
       return { value: v, minutes, recencyIndex: i };
     })
@@ -321,6 +384,145 @@ export function summarizePlayer(games: GameLogEntry[]): PlayerSummary {
   };
 }
 
+// ─── Window & venue slicing (props-research toggles) ────────────────────────
+
+export type Window = "last5" | "last10" | "last20" | "season" | "vs";
+export type Venue = "all" | "home" | "away" | "starts";
+
+export const WINDOW_LABEL: Record<Window, string> = {
+  last5: "Last 5",
+  last10: "Last 10",
+  last20: "Last 20",
+  season: "Season",
+  vs: "vs Opp",
+};
+
+export const VENUE_LABEL: Record<Venue, string> = {
+  all: "All",
+  home: "Home",
+  away: "Away",
+  starts: "Starts",
+};
+
+const WINDOW_SIZE: Record<Window, number | null> = {
+  last5: 5,
+  last10: 10,
+  last20: 20,
+  season: null,
+  vs: null,
+};
+
+/**
+ * Slice the most-recent-first game log by venue, opponent, then window. Venue
+ * + opponent filter first so "last 5 home" / "vs ARS" mean what you'd expect.
+ * When window === "vs", we ignore the size limit and return every matching
+ * meeting (H2H samples are tiny — show them all).
+ */
+export function sliceGames(
+  games: GameLogEntry[],
+  window: Window,
+  venue: Venue = "all",
+  opponentId?: number,
+): GameLogEntry[] {
+  let pool = games.filter((g) => {
+    if (venue === "home") return g.isHome;
+    if (venue === "away") return !g.isHome;
+    if (venue === "starts")
+      return !g.stats.games.substitute && (g.stats.games.minutes ?? 0) > 0;
+    return true;
+  });
+  if (window === "vs") {
+    if (opponentId === undefined) return [];
+    pool = pool.filter((g) => g.opponent.id === opponentId);
+  }
+  const n = WINDOW_SIZE[window];
+  return n === null ? pool : pool.slice(0, n);
+}
+
+// ─── H2H helpers ──────────────────────────────────────────────────────────────
+
+export interface OpponentMeta {
+  id: number;
+  name: string;
+  logo: string;
+  meetings: number;
+  lastMeeting: string | null;
+}
+
+/**
+ * Unique opponents the player's team has faced in the fetched window, sorted
+ * by most-played descending then alphabetically. Drives the H2H opponent picker.
+ */
+export function getOpponentsPlayed(games: GameLogEntry[]): OpponentMeta[] {
+  const map = new Map<number, OpponentMeta>();
+  for (const g of games) {
+    const existing = map.get(g.opponent.id);
+    if (existing) {
+      existing.meetings += 1;
+      if (!existing.lastMeeting || g.date > existing.lastMeeting) {
+        existing.lastMeeting = g.date;
+      }
+    } else {
+      map.set(g.opponent.id, {
+        id: g.opponent.id,
+        name: g.opponent.name,
+        logo: g.opponent.logo,
+        meetings: 1,
+        lastMeeting: g.date,
+      });
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => b.meetings - a.meetings || a.name.localeCompare(b.name),
+  );
+}
+
+// ─── Headline stats with deltas vs baseline ──────────────────────────────────
+
+export interface HeadlineStat {
+  key: StatKey;
+  label: string;
+  /** Per-game average in the filtered window. null if no appearances. */
+  avg: number | null;
+  /** avg − baselineAvg. null if either side missing. */
+  delta: number | null;
+}
+
+const HEADLINE_STATS: StatKey[] = [
+  "shots",
+  "sot",
+  "goals",
+  "xg",
+  "assists",
+  "xa",
+  "minutes",
+];
+
+function avgOf(games: GameLogEntry[], key: StatKey): number | null {
+  const values = games
+    .filter((g) => (g.stats.games.minutes ?? 0) > 0)
+    .map((g) => pickGameStat(g, key))
+    .filter((v): v is number => v !== null);
+  if (!values.length) return null;
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+export function computeHeadlineStats(
+  games: GameLogEntry[],
+  baseline: GameLogEntry[]
+): HeadlineStat[] {
+  return HEADLINE_STATS.map((key) => {
+    const cur = avgOf(games, key);
+    const base = avgOf(baseline, key);
+    return {
+      key,
+      label: STAT_LABEL[key],
+      avg: cur,
+      delta: cur !== null && base !== null ? cur - base : null,
+    };
+  });
+}
+
 // ─── Per-stat trend series for sparkline bars ────────────────────────────────
 
 export interface TrendSeries {
@@ -339,7 +541,7 @@ export function computeTrendSeries(games: GameLogEntry[]): TrendSeries[] {
     label: STAT_LABEL[stat],
     values: chrono.map((g) => {
       if ((g.stats.games.minutes ?? 0) === 0) return null;
-      return pickStat(g.stats, stat);
+      return pickGameStat(g, stat);
     }),
   }));
 }
